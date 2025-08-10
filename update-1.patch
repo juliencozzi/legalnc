@@ -1,0 +1,495 @@
+diff --git a/next.config.mjs b/next.config.mjs
+index 1111111..2222222 100644
+--- a/next.config.mjs
++++ b/next.config.mjs
+@@ -1,10 +1,6 @@
+ /** @type {import('next').NextConfig} */
+ const nextConfig = {
+-  reactStrictMode: true,
+-  experimental: {
+-    serverActions: true
+-  }
++  reactStrictMode: true
+ };
+ export default nextConfig;
+diff --git a/.env.example b/.env.example
+index 1111111..2222222 100644
+--- a/.env.example
++++ b/.env.example
+@@ -20,3 +20,6 @@ SIGNATURENC_API_KEY=
+ 
+ # App
+ APP_URL=http://localhost:3000
++
++# Admin (temporaire pour /api/admin/metrics)
++ADMIN_API_KEY=change-me
+diff --git a/src/components/Hero.tsx b/src/components/Hero.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/Hero.tsx
+@@ -0,0 +1,50 @@
++export default function Hero() {
++  return (
++    <section className="relative isolate overflow-hidden">
++      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-white to-slate-50" />
++      <div className="mx-auto max-w-7xl px-6 py-20">
++        <div className="grid items-center gap-10 md:grid-cols-2">
++          <div>
++            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium">
++              Nouveau • Pilot NC
++            </span>
++            <h1 className="mt-4 text-4xl font-extrabold tracking-tight md:text-5xl">
++              Répondez aux appels d’offres NC <span className="underline decoration-wavy">3× plus vite</span>
++            </h1>
++            <p className="mt-4 text-lg text-slate-600">
++              Veille locale, check-list conformité et trames prêtes à signer. Intégration ePayNC & Signature.nc.
++            </p>
++            <div className="mt-6 flex items-center gap-3">
++              <a href="/signup" className="rounded-2xl px-5 py-3 text-white bg-black hover:opacity-90">Essayer gratuitement</a>
++              <a href="/demo" className="rounded-2xl px-5 py-3 border">Voir une démo</a>
++            </div>
++            <p className="mt-3 text-xs text-slate-500">Essai 14 jours • Sans carte • FR/EN</p>
++          </div>
++          <div className="relative rounded-3xl border bg-white p-3 shadow-xl">
++            <div className="aspect-[16/10] w-full rounded-2xl bg-slate-100 grid place-items-center text-slate-400">
++              Aperçu produit
++            </div>
++          </div>
++        </div>
++      </div>
++    </section>
++  );
++}
+diff --git a/src/components/StatsCards.tsx b/src/components/StatsCards.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/StatsCards.tsx
+@@ -0,0 +1,25 @@
++type Stat = { label: string; value: string; sub?: string };
++const STATS: Stat[] = [
++  { label: "Annonces ingérées (30j)", value: "1 248", sub: "+12% vs 30j" },
++  { label: "Temps moyen gain", value: "−64%", sub: "préparation dossier" },
++  { label: "Taux d’ouverture alertes", value: "72%", sub: "clients pilotes" },
++];
++
++export default function StatsCards() {
++  return (
++    <section className="mx-auto max-w-7xl px-6 py-10">
++      <div className="grid gap-6 sm:grid-cols-3">
++        {STATS.map((s) => (
++          <div key={s.label} className="rounded-2xl border bg-white p-5 shadow-soft">
++            <div className="text-xs uppercase tracking-wide text-slate-500">{s.label}</div>
++            <div className="mt-2 text-2xl font-bold">{s.value}</div>
++            {s.sub && <div className="text-xs text-slate-500 mt-1">{s.sub}</div>}
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/page.tsx
+@@ -0,0 +1,22 @@
++import Hero from "@/components/Hero";
++import StatsCards from "@/components/StatsCards";
++
++export default function Page() {
++  return (
++    <>
++      <Hero />
++      <StatsCards />
++      <section className="mx-auto max-w-7xl px-6 py-16">
++        <div className="grid gap-6 md:grid-cols-3">
++          {[
++            ["Veille locale", "Collecte quotidienne des avis NC, dédoublonnage et normalisation."],
++            ["Matching explicable", "Score 0–100 basé sur vos secteurs, montants, délais et mots-clés."],
++            ["Dossiers prêts", "Trames mémoire + DC1/DC2 pré-remplies, prêtes à signer."],
++          ].map(([t, d]) => (
++            <div key={t} className="rounded-2xl border bg-white p-6 shadow-soft">
++              <h3 className="text-lg font-semibold">{t}</h3>
++              <p className="mt-2 text-slate-600">{d}</p>
++            </div>
++          ))}
++        </div>
++      </section>
++    </>
++  );
++}
+diff --git a/src/lib/supabaseAdmin.ts b/src/lib/supabaseAdmin.ts
+new file mode 100644
+--- /dev/null
++++ b/src/lib/supabaseAdmin.ts
+@@ -0,0 +1,15 @@
++import { createClient } from "@supabase/supabase-js";
++
++/**
++ * Server-side admin client using the Supabase service role key.
++ * Bypasses RLS for secure backend/admin operations.
++ * DO NOT expose the service role key to the browser.
++ */
++export function createSupabaseAdmin() {
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
++  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
++  if (!url || !key) {
++    throw new Error("Missing Supabase admin env vars");
++  }
++  return createClient(url, key, { auth: { persistSession: false } });
++}
+diff --git a/src/app/api/admin/metrics/route.ts b/src/app/api/admin/metrics/route.ts
+new file mode 100644
+--- /dev/null
++++ b/src/app/api/admin/metrics/route.ts
+@@ -0,0 +1,45 @@
++import { NextResponse } from "next/server";
++import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
++
++/**
++ * GET /api/admin/metrics
++ * Header: x-admin-key: <ADMIN_API_KEY>
++ * Returns aggregate metrics for dashboard.
++ */
++export async function GET(req: Request) {
++  const key = req.headers.get("x-admin-key");
++  const expected = process.env.ADMIN_API_KEY;
++  if (!expected || key !== expected) {
++    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
++  }
++
++  const supa = createSupabaseAdmin();
++
++  const [tendersCount, orgsCount, usersCount, paymentsLast48h] = await Promise.all([
++    supa.from("tenders").select("*", { count: "exact", head: true }),
++    supa.from("orgs").select("*", { count: "exact", head: true }),
++    supa.auth.admin.listUsers({ page: 1, perPage: 1 }),
++    supa
++      .from("payments")
++      .select("id, status", { count: "exact", head: true })
++      .gte("occurred_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString()),
++  ]);
++
++  const usersTotal = (usersCount as any)?.data?.total ?? 0;
++
++  return NextResponse.json({
++    tenders: tendersCount.count ?? 0,
++    orgs: orgsCount.count ?? 0,
++    users: usersTotal,
++    paymentsLast48h: paymentsLast48h.count ?? 0,
++    generatedAt: new Date().toISOString(),
++  });
++}
+diff --git a/src/app/admin/page.tsx b/src/app/admin/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/admin/page.tsx
+@@ -0,0 +1,90 @@
++"use client";
++import { useEffect, useState } from "react";
++
++type Metrics = {
++  tenders: number;
++  orgs: number;
++  users: number;
++  paymentsLast48h: number;
++  generatedAt: string;
++};
++
++export default function AdminPage() {
++  const [m, setM] = useState<Metrics | null>(null);
++  const [err, setErr] = useState<string | null>(null);
++  const [key, setKey] = useState<string>("");
++
++  useEffect(() => {
++    const k = localStorage.getItem("adminKey") || "";
++    if (k) {
++      setKey(k);
++      fetchMetrics(k);
++    }
++  }, []);
++
++  async function fetchMetrics(k: string) {
++    try {
++      const res = await fetch("/api/admin/metrics", { headers: { "x-admin-key": k } });
++      if (!res.ok) {
++        setErr("Accès refusé. Vérifiez ADMIN_API_KEY.");
++        setM(null);
++        return;
++      }
++      const data = await res.json();
++      setM(data);
++      setErr(null);
++    } catch (e: any) {
++      setErr(e?.message || "Erreur inattendue");
++    }
++  }
++
++  return (
++    <div className="mx-auto max-w-7xl px-6 py-10">
++      <h1 className="text-2xl font-bold">Admin — Dashboard</h1>
++      <p className="mt-1 text-slate-600">Suivi des annonces, comptes et paiements.</p>
++
++      <div className="mt-6 rounded-2xl border bg-white p-6">
++        <label className="text-sm">Clé d’accès admin (temporaire)</label>
++        <div className="mt-2 flex gap-2">
++          <input
++            value={key}
++            onChange={(e) => setKey(e.target.value)}
++            placeholder="ADMIN_API_KEY"
++            className="w-full rounded-xl border px-3 py-2"
++          />
++          <button
++            onClick={() => {
++              localStorage.setItem("adminKey", key);
++              fetchMetrics(key);
++            }}
++            className="rounded-xl bg-black px-4 py-2 text-white"
++          >
++            Charger
++          </button>
++        </div>
++        <p className="mt-2 text-xs text-slate-500">
++          Pour la V1, l’accès est protégé par une clé simple côté serveur. À remplacer par un vrai contrôle de rôles.
++        </p>
++      </div>
++
++      {err && <div className="mt-6 rounded-xl border bg-red-50 p-4 text-red-700">{err}</div>}
++
++      {m && (
++        <div className="mt-6 grid gap-6 sm:grid-cols-4">
++          {[
++            ["Annonces (total)", m.tenders],
++            ["Organisations", m.orgs],
++            ["Utilisateurs", m.users],
++            ["Paiements (48h)", m.paymentsLast48h],
++          ].map(([label, value]) => (
++            <div key={label as string} className="rounded-2xl border bg-white p-5 shadow-soft">
++              <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
++              <div className="mt-2 text-2xl font-bold">{value as number}</div>
++            </div>
++          ))}
++          <div className="sm:col-span-4 text-right text-xs text-slate-500">
++            Mis à jour: {new Date(m.generatedAt).toLocaleString()}
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/app/pricing/page.tsx b/src/app/pricing/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/pricing/page.tsx
+@@ -0,0 +1,74 @@
++"use client";
++import { useState } from "react";
++
++const PLANS = [
++  { code: "FREE", name: "Essai", price: 0, period: "mois", features: ["5 opportunités suivies", "Alertes quotidiennes", "1 export dossier"] },
++  { code: "PRO", name: "Pro", price: 5900, period: "mois", features: ["50 opportunités", "Alertes quot. + hebdo", "Exports illimités", "Check-list conformité"] },
++  { code: "PRO_PLUS", name: "Pro+", price: 12900, period: "mois", features: ["Illimité", "Relances J-7/J-3/J-1", "Signatures intégrées", "Support prioritaire"] },
++];
++
++export default function PricingPage() {
++  const [loading, setLoading] = useState<string | null>(null);
++  const [orgId, setOrgId] = useState<string>("demo-org");
++
++  async function subscribe(planCode: string) {
++    setLoading(planCode);
++    try {
++      const res = await fetch("/api/billing/checkout", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ orgId, planCode }),
++      });
++      const data = await res.json();
++      if (data?.url) {
++        window.location.href = data.url;
++      } else {
++        alert("Erreur de redirection paiement");
++      }
++    } catch (e: any) {
++      alert(e?.message || "Erreur inattendue");
++    } finally {
++      setLoading(null);
++    }
++  }
++
++  return (
++    <div className="mx-auto max-w-7xl px-6 py-16">
++      <h1 className="text-3xl font-bold">Tarifs</h1>
++      <p className="mt-2 text-slate-600">Choisissez un plan. Paiement sécurisé via ePayNC.</p>
++
++      <div className="mt-8 mb-4">
++        <label className="text-sm">Organisation</label>
++        <input
++          className="mt-1 w-full max-w-md rounded-xl border px-3 py-2"
++          placeholder="ID organisation (temporaire)"
++          value={orgId}
++          onChange={(e) => setOrgId(e.target.value)}
++        />
++        <p className="mt-1 text-xs text-slate-500">En V1, entrez votre orgId. L’auth/détection auto arrive ensuite.</p>
++      </div>
++
++      <div className="grid gap-6 md:grid-cols-3">
++        {PLANS.map((p) => (
++          <div key={p.code} className="rounded-2xl border bg-white p-6 shadow-soft">
++            <div className="text-sm font-semibold">{p.name}</div>
++            <div className="mt-2 text-3xl font-extrabold">
++              {p.price === 0 ? "Gratuit" : `${(p.price / 100).toFixed(0)}00 XPF`}
++              <span className="text-sm font-medium text-slate-500"> / {p.period}</span>
++            </div>
++            <ul className="mt-4 space-y-2 text-sm text-slate-600">
++              {p.features.map((f) => (
++                <li key={f}>• {f}</li>
++              ))}
++            </ul>
++            <button
++              className="mt-6 w-full rounded-xl bg-black px-4 py-2 text-white disabled:opacity-50"
++              disabled={loading === p.code}
++              onClick={() => subscribe(p.code)}
++            >
++              {loading === p.code ? "Redirection..." : "Choisir"}
++            </button>
++          </div>
++        ))}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/onboarding/page.tsx b/src/app/onboarding/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/onboarding/page.tsx
+@@ -0,0 +1,79 @@
++"use client";
++import { useState } from "react";
++
++export default function Onboarding() {
++  const [sectors, setSectors] = useState<string>("Services, IT, BTP");
++  const [keywords, setKeywords] = useState<string>("portail, logiciel, maintenance, réseaux");
++  const [budgetMin, setBudgetMin] = useState<number>(0);
++  const [budgetMax, setBudgetMax] = useState<number>(20000000);
++  const [alerts, setAlerts] = useState<"daily" | "weekly">("daily");
++  const [done, setDone] = useState<boolean>(false);
++
++  async function submit() {
++    const res = await fetch("/api/onboarding/complete", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ sectors, keywords, budgetMin, budgetMax, alerts }),
++    });
++    if (res.ok) setDone(true);
++  }
++
++  if (done) {
++    return (
++      <div className="mx-auto max-w-2xl px-6 py-16 text-center">
++        <h1 className="text-2xl font-bold">Bienvenue !</h1>
++        <p className="mt-2 text-slate-600">Votre profil est enregistré. Les opportunités vont s’afficher selon vos critères.</p>
++        <a href="/dashboard" className="mt-6 inline-block rounded-xl bg-black px-5 py-3 text-white">
++          Ouvrir le tableau de bord
++        </a>
++      </div>
++    );
++  }
++
++  return (
++    <div className="mx-auto max-w-2xl px-6 py-16">
++      <h1 className="text-2xl font-bold">Onboarding</h1>
++      <p className="mt-2 text-slate-600">Dites-nous ce qui vous intéresse pour un matching précis.</p>
++
++      <div className="mt-8 space-y-6">
++        <div>
++          <label className="text-sm">Secteurs (liste)</label>
++          <input value={sectors} onChange={(e) => setSectors(e.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2" />
++        </div>
++
++        <div>
++          <label className="text-sm">Mots-clés (virgules)</label>
++          <input value={keywords} onChange={(e) => setKeywords(e.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2" />
++        </div>
++
++        <div className="grid grid-cols-2 gap-4">
++          <div>
++            <label className="text-sm">Budget min (XPF)</label>
++            <input type="number" value={budgetMin} onChange={(e) => setBudgetMin(parseInt(e.target.value))} className="mt-1 w-full rounded-xl border px-3 py-2" />
++          </div>
++          <div>
++            <label className="text-sm">Budget max (XPF)</label>
++            <input type="number" value={budgetMax} onChange={(e) => setBudgetMax(parseInt(e.target.value))} className="mt-1 w-full rounded-xl border px-3 py-2" />
++          </div>
++        </div>
++
++        <div>
++          <label className="text-sm">Fréquence d’alertes</label>
++          <div className="mt-2 flex gap-3">
++            <button onClick={() => setAlerts("daily")} className={`rounded-xl border px-4 py-2 ${alerts==="daily"?"bg-black text-white":"bg-white"}`}>Quotidienne</button>
++            <button onClick={() => setAlerts("weekly")} className={`rounded-xl border px-4 py-2 ${alerts==="weekly"?"bg-black text-white":"bg-white"}`}>Hebdomadaire</button>
++          </div>
++        </div>
++
++        <button onClick={submit} className="rounded-xl bg-black px-5 py-3 text-white">Valider</button>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/billing/success/page.tsx b/src/app/billing/success/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/billing/success/page.tsx
+@@ -0,0 +1,11 @@
++export default function BillingSuccess() {
++  return (
++    <div className="mx-auto max-w-2xl px-6 py-16 text-center">
++      <h1 className="text-2xl font-bold">Paiement confirmé ✅</h1>
++      <p className="mt-2 text-slate-600">Votre abonnement est activé. Merci !</p>
++      <a href="/dashboard" className="mt-6 inline-block rounded-xl bg-black px-5 py-3 text-white">
++        Ouvrir le tableau de bord
++      </a>
++    </div>
++  );
++}
+diff --git a/src/app/billing/cancel/page.tsx b/src/app/billing/cancel/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/billing/cancel/page.tsx
+@@ -0,0 +1,11 @@
++export default function BillingCancel() {
++  return (
++    <div className="mx-auto max-w-2xl px-6 py-16 text-center">
++      <h1 className="text-2xl font-bold">Paiement annulé ⛔</h1>
++      <p className="mt-2 text-slate-600">Vous pouvez réessayer à tout moment depuis la page Tarifs.</p>
++      <a href="/pricing" className="mt-6 inline-block rounded-xl bg-white px-5 py-3 border">Retour aux tarifs</a>
++    </div>
++  );
++}
+diff --git a/docs/UPDATE-1.md b/docs/UPDATE-1.md
+new file mode 100644
+--- /dev/null
++++ b/docs/UPDATE-1.md
+@@ -0,0 +1,26 @@
++# Update 1 — Admin, Pricing, Onboarding, Billing pages
++
++## Nouvelles routes
++- `/admin` (Dashboard)
++- `/pricing` (plans + checkout ePayNC)
++- `/onboarding` (profil de matching)
++- `/billing/success`, `/billing/cancel`
++
++## Nouvelles APIs
++- `GET /api/admin/metrics` — nécessite `ADMIN_API_KEY` en header `x-admin-key` (temporaire)
++
++## Nouvelles libs
++- `src/lib/supabaseAdmin.ts` — client admin (service role) côté serveur
++
++## Env à compléter
++```
++ADMIN_API_KEY=change-me
++```
++Ajoute aussi (déjà présent) : `SUPABASE_SERVICE_ROLE_KEY` pour l'API admin.
++
++## Prochaines étapes
++- Remplacer la clé admin par un vrai contrôle de rôles (OWNER/ADMIN) via Supabase Auth.
++- Connecter le Dashboard aux données réelles (parsing n8n).
++- Implémenter l’API ePayNC réelle et mapping webhooks → `subscriptions`, `payments`.
