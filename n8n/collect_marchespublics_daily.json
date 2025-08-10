@@ -1,0 +1,237 @@
+{
+  "name": "collect_marchespublics_daily",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 5
+            }
+          ]
+        }
+      },
+      "id": "Cron",
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return Array.from({length: 3}, (_, i) => ({ json: { page: i + 1 } }));"
+      },
+      "id": "Build Pages",
+      "name": "Build Pages",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.marchespublics.nc/",
+        "options": {
+          "useQueryString": true,
+          "qs": {
+            "page": "={{$json.page}}"
+          }
+        }
+      },
+      "id": "Fetch Listing",
+      "name": "Fetch Listing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title",
+              "cssSelector": "a",
+              "returnArray": false,
+              "attribute": "text"
+            },
+            {
+              "key": "href",
+              "cssSelector": "a",
+              "returnArray": false,
+              "attribute": "href"
+            }
+          ]
+        },
+        "options": {
+          "multipleElements": true,
+          "rootElement": "article, li, .result, .card"
+        }
+      },
+      "id": "HTML Extract",
+      "name": "HTML Extract",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = [];\nfor (const i of $items()) {\n  const title = (i.json.title || '').trim();\n  const href = i.json.href || '';\n  if (!title || !href) continue;\n  const m = title.match(/([A-Z]{2,}[\\s-]?\\d{2,}[\\w-]*)/) || href.match(/([A-Za-z0-9_-]{5,})$/);\n  const ref = (m ? m[1] : (title || href)).slice(0, 64);\n  out.push({ json: { source: 'marchespublics.nc', ref, buyer: 'Inconnu', title, url: href, raw_json: { title, href } } });\n}\nreturn out;"
+      },
+      "id": "Map to Tender",
+      "name": "Map to Tender",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const seen = new Set();\nconst out = [];\nfor (const i of $items()) {\n  const t = i.json;\n  const key = `${t.source}:${t.ref}`;\n  if (seen.has(key)) continue;\n  seen.add(key);\n  out.push({ json: t });\n}\nreturn out;"
+      },
+      "id": "Clean + Dedupe",
+      "name": "Clean + Dedupe",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.baseUrl}}/api/ingest/tenders",
+        "options": {
+          "headers": {
+            "x-ingest-key": "={{$json.ingestKey}}",
+            "Content-Type": "application/json"
+          }
+        },
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ { items: $items().map(i=>i.json) } }}"
+      },
+      "id": "POST Ingest",
+      "name": "POST Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "passThrough",
+        "options": {
+          "values": {
+            "string": [
+              {
+                "name": "baseUrl",
+                "value": "http://localhost:3000"
+              },
+              {
+                "name": "ingestKey",
+                "value": "REPLACE_ME"
+              }
+            ]
+          }
+        }
+      },
+      "id": "Config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        540,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Build Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pages": {
+      "main": [
+        [
+          {
+            "node": "Fetch Listing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Listing": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract": {
+      "main": [
+        [
+          {
+            "node": "Map to Tender",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map to Tender": {
+      "main": [
+        [
+          {
+            "node": "Clean + Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean + Dedupe": {
+      "main": [
+        [
+          {
+            "node": "POST Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
