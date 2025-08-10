@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Org {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     UserOrgRole[]
+  subscriptions Subscription[]
+  projects  Project[]
+  alerts    Alert[]
+  payments  Payment[]
+  scores    OrgTenderScore[]
+}
+
+model UserOrgRole {
+  id     String @id @default(uuid())
+  userId String
+  orgId  String
+  role   String
+
+  org    Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Plan {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  priceXpf  Int
+  period    String   // 'monthly' | 'yearly'
+  limitsJson Json?
+  createdAt DateTime @default(now())
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                 String   @id @default(uuid())
+  orgId              String
+  planId             String
+  status             String   // 'active' | 'past_due' | 'canceled' | 'trialing'
+  currentPeriodEnd   DateTime
+  epayncCustomerId   String?
+  epayncSubId        String?
+  createdAt          DateTime @default(now())
+  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  plan               Plan     @relation(fields: [planId], references: [id])
+}
+
+model Tender {
+  id          String   @id @default(uuid())
+  source      String
+  ref         String
+  buyer       String
+  title       String
+  category    String?
+  amountMin   Int?
+  amountMax   Int?
+  deadlineAt  DateTime?
+  url         String?
+  rawJson     Json?
+  createdAt   DateTime @default(now())
+
+  requirements TenderRequirement[]
+  scores       OrgTenderScore[]
+  projects     Project[]
+
+  @@index([ref])
+  @@index([deadlineAt])
+}
+
+model TenderRequirement {
+  id            String @id @default(uuid())
+  tenderId      String
+  type          String
+  label         String
+  sourceExcerpt String?
+  tender        Tender @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+}
+
+model OrgTenderScore {
+  id        String   @id @default(uuid())
+  orgId     String
+  tenderId  String
+  score     Int
+  reasons   Json?
+  createdAt DateTime @default(now())
+  org       Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tender    Tender  @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, tenderId])
+  @@index([orgId, score])
+}
+
+model Project {
+  id           String   @id @default(uuid())
+  orgId        String
+  tenderId     String
+  status       String   // 'to_qualify' | 'go' | 'drafting' | 'review' | 'to_submit'
+  dueAt        DateTime?
+  createdAt    DateTime @default(now())
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tender       Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  files        ProjectFile[]
+  signRequests SignRequest[]
+}
+
+model ProjectFile {
+  id        String   @id @default(uuid())
+  projectId String
+  path      String
+  type      String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model SignRequest {
+  id               String   @id @default(uuid())
+  projectId        String
+  docType          String
+  signatureStatus  String   // 'draft' | 'sent' | 'signed' | 'failed'
+  signatureId      String?
+  createdAt        DateTime @default(now())
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id               String   @id @default(uuid())
+  orgId            String
+  amountXpf        Int
+  status           String   // 'paid' | 'pending' | 'failed'
+  epayncPaymentId  String?
+  occurredAt       DateTime @default(now())
+  meta             Json?
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model Alert {
+  id           String   @id @default(uuid())
+  orgId        String
+  channel      String   // 'email' | 'whatsapp'
+  frequency    String   // 'daily' | 'weekly'
+  lastSentAt   DateTime?
+  filtersJson  Json?
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}

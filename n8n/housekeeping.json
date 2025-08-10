@@ -1,0 +1,34 @@
+{
+  "name": "housekeeping",
+  "nodes": [
+    {
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "parameters": {
+        "rule": "0 5 * * *"
+      }
+    },
+    {
+      "name": "FetchSource",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://www.marchespublics.nc/..."
+      }
+    },
+    {
+      "name": "Parse",
+      "type": "n8n-nodes-base.function",
+      "parameters": {
+        "functionCode": "// parse HTML/XML to JSON"
+      }
+    },
+    {
+      "name": "Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "{{ $json.api }}/api/admin/upsert-tenders"
+      }
+    }
+  ],
+  "connections": {}
+}
