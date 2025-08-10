@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createBrowserClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 type Tender = {
   id: string;

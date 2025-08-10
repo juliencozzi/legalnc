@@ -1,0 +1,194 @@
+{
+  "name": "parse_tender_docs",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        }
+      },
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://example.com/tender"
+      },
+      "name": "Fetch tender page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "extractionValues": {
+          "values": [
+            {
+              "key": "href",
+              "cssSelector": "a[href$='.pdf'],a[href$='.docx'],a[href$='.doc']",
+              "returnArray": true,
+              "attribute": "href"
+            }
+          ]
+        }
+      },
+      "name": "Extract doc links",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const tenderId = $json.tenderId || 'REPLACE_TENDER_ID'; const base='https://example.com'; const hrefs = ($items('Extract doc links')||[]).flatMap(i=>i.json.href||[]).map(h=>h.startsWith('http')?h:base+(h.startsWith('/')?h:'/'+h)); const docs = hrefs.map(url=>({url})); return [{json:{tenderId,docs}}];"
+      },
+      "name": "Map docs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.baseUrl}}/api/ingest/tender-docs",
+        "options": {
+          "headers": {
+            "x-ingest-key": "={{$json.ingestKey}}",
+            "Content-Type": "application/json"
+          }
+        },
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ $json }}"
+      },
+      "name": "POST /ingest/tender-docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.baseUrl}}/api/parse/tender/{{$json.tenderId}}",
+        "options": {
+          "headers": {
+            "x-parse-key": "={{$json.ingestKey}}"
+          }
+        }
+      },
+      "name": "POST /parse/tender/:id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "passThrough",
+        "options": {
+          "values": {
+            "string": [
+              {
+                "name": "baseUrl",
+                "value": "http://localhost:3000"
+              },
+              {
+                "name": "ingestKey",
+                "value": "REPLACE_WITH_INGEST_SECRET"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        520,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Fetch tender page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch tender page": {
+      "main": [
+        [
+          {
+            "node": "Extract doc links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract doc links": {
+      "main": [
+        [
+          {
+            "node": "Map docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map docs": {
+      "main": [
+        [
+          {
+            "node": "POST /ingest/tender-docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /ingest/tender-docs": {
+      "main": [
+        [
+          {
+            "node": "POST /parse/tender/:id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { createBrowserClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
