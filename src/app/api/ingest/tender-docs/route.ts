@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
-type DocItem = { url: string; mime?: string | null };
+type DocItem = { url: string; mime?: string | null; kind?: string | null };
 
 export async function POST(req: Request) {
   const key = req.headers.get("x-ingest-key");
@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     tender_id: tenderId,
     url: String(d.url),
     mime: d.mime ?? null,
+    kind: d.kind ?? null,
     status: "queued",
   }));
 

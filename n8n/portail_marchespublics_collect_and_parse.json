@@ -1,0 +1,296 @@
+{
+  "name": "portail_marchespublics_collect_and_parse",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "unit": "hours",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "name": "Cron (2h)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        260,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "passThrough",
+        "options": {
+          "values": {
+            "string": [
+              {
+                "name": "baseUrl",
+                "value": "http://localhost:3000"
+              },
+              {
+                "name": "ingestKey",
+                "value": "REPLACE_WITH_INGEST_SECRET"
+              },
+              {
+                "name": "userAgent",
+                "value": "LegalNCBot/1.0 (+contact@legalnc)"
+              },
+              {
+                "name": "listUrl",
+                "value": "https://portail.marchespublics.nc/?page=Entreprise.EntrepriseAdvancedSearch&AllCons"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.listUrl}}",
+        "options": {
+          "headers": {
+            "User-Agent": "={{$json.userAgent}}"
+          },
+          "ignoreResponseCode": true,
+          "fullResponse": true
+        }
+      },
+      "name": "Fetch Listing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        740,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json.body?.toString?.() || $json.body || $json;\n// Extract /entreprise/consultation/<id>?orgAcronyme=<org>\nconst re = /href=\"([^\"]*\\/entreprise\\/consultation\\/(\\d+)\\?orgAcronyme=([A-Za-z0-9]+))\"/g;\nconst seen = new Set();\nconst out = [];\nlet m; while ((m = re.exec(body))) {\n  const url = new URL(m[1], 'https://portail.marchespublics.nc').toString();\n  const id = m[2], org = m[3];\n  const key = id+':'+org;\n  if (seen.has(key)) continue; seen.add(key);\n  out.push({ json: { id, org, url } });\n}\nreturn out;"
+      },
+      "name": "Extract Consultation URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://portail.marchespublics.nc/index.php?page=Entreprise.EntrepriseDemandeTelechargementDce&id=${$json.id}&orgAcronyme=${$json.org}`}}",
+        "options": {
+          "headers": {
+            "User-Agent": "={{$json.userAgent}}"
+          },
+          "ignoreResponseCode": true,
+          "fullResponse": true
+        }
+      },
+      "name": "Fetch DCE Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "extractionValues": {
+          "values": [
+            {
+              "key": "href",
+              "cssSelector": "a[href$='.pdf'], a[href$='.PDF'], a[href$='.docx'], a[href$='.DOCX'], a[href$='.doc'], a[href$='.DOC']",
+              "returnArray": true,
+              "attribute": "href"
+            }
+          ]
+        },
+        "options": {
+          "multipleElements": true
+        }
+      },
+      "name": "HTML Extract Doc Links",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = 'https://portail.marchespublics.nc';\nfunction classify(url){\n  const u = url.toLowerCase();\n  if (u.includes('reglement') || u.match(/(^|\\W)rc(\\W|$)/)) return 'RC';\n  if (u.includes('cctp')) return 'CCTP';\n  if (u.includes('ccap')) return 'CCAP';\n  if (u.includes('dume')) return 'DUME';\n  if (u.includes('acte') && u.includes('engagement') || u.match(/(^|\\W)ae(\\W|$)/)) return 'AE';\n  if (u.includes('bordereau') || u.includes('bpu') || u.includes('prix')) return 'BPU';\n  if (u.includes('questionnaire') || u.includes('annexe')) return 'ANNEXE';\n  if (u.endsWith('.pdf')) return 'PDF';\n  if (u.endsWith('.docx') || u.endsWith('.doc')) return 'WORD';\n  return 'OTHER';\n}\nconst hrefs = ($items('HTML Extract Doc Links')||[]).flatMap(i => i.json.href || []);\nconst absolute = hrefs.map(h => h.startsWith('http') ? h : base + (h.startsWith('/') ? h : '/' + h));\nconst seen = new Set();\nconst docs = [];\nfor (const url of absolute){ const key = url.split('#')[0]; if (seen.has(key)) continue; seen.add(key); docs.push({ url, kind: classify(url) }); }\nreturn [{ json: { tenderId: $json.id, docs } }];"
+      },
+      "name": "Map Docs + Classify",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.baseUrl}}/api/ingest/tender-docs",
+        "options": {
+          "headers": {
+            "x-ingest-key": "={{$json.ingestKey}}",
+            "Content-Type": "application/json"
+          }
+        },
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ $json }}"
+      },
+      "name": "POST /ingest/tender-docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "milliseconds": 800
+      },
+      "name": "Wait 0.8s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.baseUrl}}/api/parse/tender/{{$json.tenderId}}",
+        "options": {
+          "headers": {
+            "x-parse-key": "={{$json.ingestKey}}"
+          }
+        }
+      },
+      "name": "POST /parse/tender/:id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2380,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Cron (2h)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Listing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Listing": {
+      "main": [
+        [
+          {
+            "node": "Extract Consultation URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Consultation URLs": {
+      "main": [
+        [
+          {
+            "node": "Fetch DCE Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch DCE Page": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract Doc Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract Doc Links": {
+      "main": [
+        [
+          {
+            "node": "Map Docs + Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Docs + Classify": {
+      "main": [
+        [
+          {
+            "node": "POST /ingest/tender-docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /ingest/tender-docs": {
+      "main": [
+        [
+          {
+            "node": "Wait 0.8s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 0.8s": {
+      "main": [
+        [
+          {
+            "node": "POST /parse/tender/:id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
