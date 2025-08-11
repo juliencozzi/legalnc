@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 
 async function bufferFromArrayBuffer(ab: ArrayBuffer) {
   return Buffer.from(new Uint8Array(ab));

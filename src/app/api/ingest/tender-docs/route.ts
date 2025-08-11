@@ -3,6 +3,11 @@ import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 type DocItem = { url: string; mime?: string | null; kind?: string | null };
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+
 export async function POST(req: Request) {
   const key = req.headers.get("x-ingest-key");
   if (!process.env.INGEST_SECRET || key !== process.env.INGEST_SECRET) {
