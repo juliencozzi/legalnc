@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url") || "";
   const key = req.headers.get("x-proxy-key") || "";
+  return Response.json({ seenKey: key, matches: key === (process.env.PROXY_KEY ?? '') });
 
   if (!key || key !== process.env.INGEST_KEY) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
