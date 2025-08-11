@@ -1,43 +1,48 @@
-import { NextRequest, NextResponse } from "next/server";
+export const dynamic = 'force-dynamic';
 
-export const dynamic = "force-dynamic";
+function bad(status: number, message: string) {
+  return new Response(JSON.stringify({ error: { status, message } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
 
-export async function GET(req: NextRequest) {
-  const url = req.nextUrl.searchParams.get("url") || "";
-  const key = req.headers.get("x-proxy-key") || "";
-  return Response.json({ seenKey: key, matches: key === (process.env.PROXY_KEY ?? '') });
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const target = url.searchParams.get('url') || '';
+  const key = req.headers.get('x-proxy-key') || '';
 
-  if (!key || key !== process.env.INGEST_KEY) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  if (!process.env.PROXY_KEY) return bad(500, 'Missing PROXY_KEY on server');
+  if (key !== process.env.PROXY_KEY) return bad(401, 'unauthorized');
+  if (!target) return bad(400, 'Missing ?url=');
+
+  // headers utiles pour le site cible
+  const ua =
+    req.headers.get('user-agent') ||
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari';
+  const ref = req.headers.get('referer') || undefined;
 
   try {
-    // sécurise: on ne suit que portail.marchespublics.nc
-    const u = new URL(url);
-    if (u.hostname !== "portail.marchespublics.nc") {
-      return NextResponse.json({ error: "forbidden host" }, { status: 400 });
-    }
-
-    const r = await fetch(u.toString(), {
+    const r = await fetch(target, {
+      // App Router: désactive le cache pour éviter un 404 mémorisé
+      cache: 'no-store',
+      redirect: 'follow',
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
-        "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9",
-        "Referer": "https://portail.marchespublics.nc/",
+        'User-Agent': ua,
+        ...(ref ? { Referer: ref } : {}),
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
-      // important sur vercel pour suivre 30x
-      redirect: "follow",
-      cache: "no-store",
     });
 
-    const html = await r.text();
-    return new NextResponse(html, {
+    // renvoie tel quel (contenu + content-type)
+    const ct = r.headers.get('content-type') || 'text/html; charset=utf-8';
+    const body = await r.arrayBuffer(); // évite les soucis d’encodage
+    return new Response(body, {
       status: r.status,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { 'content-type': ct },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "proxy error" }, { status: 502 });
+    return bad(502, e?.message || 'fetch failed');
   }
 }
