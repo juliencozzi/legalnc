@@ -86,7 +86,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       let text = "";
       if (mime.includes("pdf")) {
         text = await extractTextFromPdf(buf);
-      } else if (mime.includes("word") || d.url.toLowerCase().endswith(".docx") || mime.includes("doc")) {
+      } else if (mime.includes("word") || d.url.toLowerCase().endsWith(".docx") || mime.includes("doc")) {
         text = await extractTextFromDocx(buf);
       } else {
         text = "";
